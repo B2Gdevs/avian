@@ -79,11 +79,21 @@ bench = false
 
 [dependencies]
 avian_derive = { path = "../avian_derive", version = "0.2" }
-bevy = { version = "0.18.0", default-features = false, features = [
+# Bumped from real-upstream "0.18.0" to "0.19.0" (task 1316-01-bevy-compat,
+# B2Gdevs/avian fork). vendor/bevy's own Cargo.toml pins version = "0.19.0"
+# (release-format, not "-dev") specifically so `[patch.crates-io] bevy =
+# { path = "../../vendor/bevy" }` in a consuming workspace (games/
+# magicborn-3d) satisfies a caret requirement — that only works if every
+# dependent's requirement is also `^0.19.x`. Left at "^0.18.0" this crate's
+# requirement excludes the patched 0.19.0 fork and cargo either fails to
+# resolve `bevy` at all or silently resolves two copies. No real bevy 0.19.0
+# is ever fetched: the consuming workspace's [patch.crates-io] substitutes
+# the local vendor/bevy path for every "bevy"/"bevy_math" crates-io edge.
+bevy = { version = "0.19.0", default-features = false, features = [
     "std",
     "bevy_log",
 ] }
-bevy_math = { version = "0.18.0", features = ["approx"] }
+bevy_math = { version = "0.19.0", features = ["approx"] }
 glam_matrix_extras = { version = "0.2", features = ["bevy_reflect"] }
 bevy_heavy = { version = "0.4" }
 bevy_transform_interpolation = { version = "0.4" }
