@@ -16,6 +16,15 @@ mod double;
 #[cfg(feature = "f64")]
 pub use double::*;
 
+mod parry_compat;
+pub(crate) use parry_compat::{
+    bevy_vector_slice_to_parry, bevy_vector_to_parry, bevy_vector_vec_to_parry, parry_vector_to_bevy,
+};
+#[cfg(feature = "f32")]
+pub(crate) use parry_compat::bevy_ivector_slice_to_parry;
+#[cfg(feature = "3d")]
+pub(crate) use parry_compat::{bevy_quat_to_parry, parry_pose_to_bevy, parry_quat_to_bevy};
+
 use bevy_math::{prelude::*, *};
 
 /// The active dimension.
@@ -614,7 +623,14 @@ pub(crate) fn make_pose(
 ) -> parry::math::Pose3 {
     let position: Position = position.into();
     let rotation: Rotation = rotation.into();
-    parry::math::Pose3::from_parts(position.0, rotation.0)
+    // `position.0`/`rotation.0` are bevy_math-backed (glam 0.32) `Vector`/`Quaternion`;
+    // `parry::math::Pose3::from_parts` expects `parry`-native (`glamx`/glam-0.30-backed)
+    // types. THIS is the actual root-cause boundary the
+    // `magicborn-kingdom-avian3d-glam-version-conflict` task named: `make_pose` itself --
+    // called from ~20 call sites across the crate -- was constructing a parry `Pose3`
+    // straight from bevy-native fields without converting them first. Convert once, here,
+    // rather than at every call site.
+    parry::math::Pose3::from_parts(bevy_vector_to_parry(position.0), bevy_quat_to_parry(rotation.0))
 }
 
 /// Computes the skew-symmetric matrix corresponding to the given vector.

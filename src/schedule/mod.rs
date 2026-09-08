@@ -16,7 +16,7 @@ use bevy::{
     ecs::{
         change_detection::Tick,
         intern::Interned,
-        schedule::{ExecutorKind, LogLevel, ScheduleBuildSettings, ScheduleLabel},
+        schedule::{LogLevel, ScheduleBuildSettings, ScheduleLabel, SingleThreadedExecutor},
         system::SystemChangeTick,
     },
     prelude::*,
@@ -87,7 +87,11 @@ impl Plugin for PhysicsSchedulePlugin {
         // Set up the physics schedule, the schedule that advances the physics simulation
         app.edit_schedule(PhysicsSchedule, |schedule| {
             schedule
-                .set_executor_kind(ExecutorKind::SingleThreaded)
+                // `Schedule::set_executor_kind(ExecutorKind::...)` was removed upstream;
+                // the current `bevy_ecs` API takes a concrete `impl SystemExecutor`
+                // instance instead of an enum tag (`vendor/bevy/crates/bevy_ecs/src/
+                // schedule/schedule.rs::set_executor`, `.../executor/single_threaded.rs`).
+                .set_executor(SingleThreadedExecutor::new())
                 .set_build_settings(ScheduleBuildSettings {
                     ambiguity_detection: LogLevel::Error,
                     ..default()

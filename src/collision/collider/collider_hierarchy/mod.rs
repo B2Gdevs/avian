@@ -45,7 +45,7 @@ use bevy::{
 ///
 /// [`Relationship`]: bevy::ecs::relationship::Relationship
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Reflect)]
-#[component(immutable, on_insert = <ColliderOf as Relationship>::on_insert, on_replace = <ColliderOf as Relationship>::on_replace)]
+#[component(immutable, on_insert = <ColliderOf as Relationship>::on_insert, on_discard = <ColliderOf as Relationship>::on_discard)]
 #[require(ColliderTransform)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serialize", reflect(Serialize, Deserialize))]
@@ -145,7 +145,7 @@ impl Relationship for ColliderOf {
         }
     }
 
-    fn on_replace(
+    fn on_discard(
         mut world: DeferredWorld,
         HookContext {
             entity,

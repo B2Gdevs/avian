@@ -553,15 +553,23 @@ impl SpatialQuery<'_, '_> {
                         return Scalar::MAX;
                     };
 
+                    // `pose1`/`pose2` are `parry`-native `Pose3` values (glamx/glam-0.30
+                    // translation+rotation) -- kept parry-native ONLY to feed
+                    // `parry::query::cast_shapes` below. `rotation2` is the bevy-native
+                    // equivalent of `pose2`'s rotation, built directly from the already
+                    // bevy-native `shape_rotation` input rather than read back out of the
+                    // parry-native `pose2.rotation` field, so bevy-side math below never
+                    // touches a parry-typed value.
                     let pose1 = make_pose(position.0, *rotation);
                     let pose2 = make_pose(origin, shape_rotation);
+                    let rotation2: Rotation = shape_rotation.into();
 
                     let Ok(Some(hit)) = parry::query::cast_shapes(
                         &pose1,
-                        Vector::ZERO,
+                        bevy_vector_to_parry(Vector::ZERO),
                         collider.shape_scaled().as_ref(),
                         &pose2,
-                        direction.adjust_precision(),
+                        bevy_vector_to_parry(direction.adjust_precision()),
                         shape.shape_scaled().as_ref(),
                         ShapeCastOptions {
                             max_time_of_impact: config.max_distance,
@@ -577,11 +585,12 @@ impl SpatialQuery<'_, '_> {
                         closest_distance = hit.time_of_impact;
                         closest_hit = Some(ShapeHitData {
                             entity: proxy.collider,
-                            point1: pose1 * hit.witness1,
-                            point2: pose2 * hit.witness2
+                            point1: position.0 + *rotation * parry_vector_to_bevy(hit.witness1),
+                            point2: origin
+                                + rotation2 * parry_vector_to_bevy(hit.witness2)
                                 + direction.adjust_precision() * hit.time_of_impact,
-                            normal1: pose1.rotation * hit.normal1,
-                            normal2: pose2.rotation * hit.normal2,
+                            normal1: *rotation * parry_vector_to_bevy(hit.normal1),
+                            normal2: rotation2 * parry_vector_to_bevy(hit.normal2),
                             distance: hit.time_of_impact,
                         });
                     }
@@ -767,15 +776,19 @@ impl SpatialQuery<'_, '_> {
                         return true;
                     };
 
+                    // See the identical boundary note in `cast_shape_predicate` above:
+                    // `pose1`/`pose2` stay parry-native for the `cast_shapes` call only;
+                    // `rotation2` is the bevy-native equivalent of `pose2`'s rotation.
                     let pose1 = make_pose(position.0, *rotation);
                     let pose2 = make_pose(origin, shape_rotation);
+                    let rotation2: Rotation = shape_rotation.into();
 
                     let Ok(Some(hit)) = parry::query::cast_shapes(
                         &pose1,
-                        Vector::ZERO,
+                        bevy_vector_to_parry(Vector::ZERO),
                         collider.shape_scaled().as_ref(),
                         &pose2,
-                        direction.adjust_precision(),
+                        bevy_vector_to_parry(direction.adjust_precision()),
                         shape.shape_scaled().as_ref(),
                         ShapeCastOptions {
                             max_time_of_impact: config.max_distance,
@@ -790,11 +803,12 @@ impl SpatialQuery<'_, '_> {
 
                     callback(ShapeHitData {
                         entity: proxy.collider,
-                        point1: position.0 + rotation * hit.witness1,
-                        point2: pose2 * hit.witness2
+                        point1: position.0 + rotation * parry_vector_to_bevy(hit.witness1),
+                        point2: origin
+                            + rotation2 * parry_vector_to_bevy(hit.witness2)
                             + direction.adjust_precision() * hit.time_of_impact,
-                        normal1: pose1.rotation * hit.normal1,
-                        normal2: pose2.rotation * hit.normal2,
+                        normal1: *rotation * parry_vector_to_bevy(hit.normal1),
+                        normal2: rotation2 * parry_vector_to_bevy(hit.normal2),
                         distance: hit.time_of_impact,
                     })
                 },

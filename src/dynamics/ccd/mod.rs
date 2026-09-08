@@ -604,18 +604,31 @@ fn solve_swept_ccd(
                 let iso1 = make_pose(prev_pos1, prev_rot1);
                 let iso2 = make_pose(prev_pos2, prev_rot2);
 
+                // `NonlinearRigidMotion` (parry::query) fields are all parry-native
+                // (glamx/glam-0.30-backed) `Vector`s -- `.into()` alone can't bridge
+                // bevy_math's glam version to parry's, so convert explicitly at this
+                // boundary rather than relying on a blanket `Into` that doesn't exist
+                // across the two crates (orphan rules block it, see parry_compat.rs).
+                // In 2D, `angvel` is a bare `Real` scalar (no glam type involved), so
+                // `ang_vel1`/`ang_vel2` pass through unconverted there.
+                #[cfg(feature = "2d")]
+                let (ang_vel1_parry, ang_vel2_parry) = (ang_vel1, ang_vel2);
+                #[cfg(feature = "3d")]
+                let (ang_vel1_parry, ang_vel2_parry) =
+                    (bevy_vector_to_parry(ang_vel1), bevy_vector_to_parry(ang_vel2));
+
                 // TODO: Support child colliders
                 let motion1 = NonlinearRigidMotion::new(
                     iso1,
-                    com1.0.into(),
-                    lin_vel1.into(),
-                    ang_vel1.into(),
+                    bevy_vector_to_parry(com1.0),
+                    bevy_vector_to_parry(lin_vel1),
+                    ang_vel1_parry,
                 );
                 let motion2 = NonlinearRigidMotion::new(
                     iso2,
-                    body2.com.0.into(),
-                    lin_vel2.into(),
-                    ang_vel2.into(),
+                    bevy_vector_to_parry(body2.com.0),
+                    bevy_vector_to_parry(lin_vel2),
+                    ang_vel2_parry,
                 );
 
                 let sweep_mode = if ccd1.mode == SweepMode::Linear

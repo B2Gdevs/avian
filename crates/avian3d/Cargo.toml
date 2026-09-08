@@ -94,9 +94,23 @@ bevy = { version = "0.19.0", default-features = false, features = [
     "bevy_log",
 ] }
 bevy_math = { version = "0.19.0", features = ["approx"] }
-glam_matrix_extras = { version = "0.2", features = ["bevy_reflect"] }
-bevy_heavy = { version = "0.4" }
-bevy_transform_interpolation = { version = "0.4" }
+# ⛔ FIXED (task magicborn-kingdom-avian3d-glam-version-conflict, 2026-09-06):
+# was pinned to "0.2" -- STALE relative to bevy_heavy's own "0.5" requirement
+# below, which already needs glam_matrix_extras "0.3". Confirmed live via
+# apps/magicborn-kingdom/Cargo.lock: glam_matrix_extras 0.2.0 pulls glam
+# 0.30.10 + bevy_reflect 0.18.1 (both stale, real crates.io fetches), while
+# glam_matrix_extras 0.3.0 (what bevy_heavy already resolves to) pulls glam
+# 0.32.1 -- the SAME glam version bevy_math/bevy_render/bevy_mesh resolve to
+# in this workspace (vendor/bevy is on 0.19.0-dev, glam 0.32.1). Two
+# glam_matrix_extras versions in one dependency graph meant avian3d's own
+# code mixed glam::Vec3 from 0.30.10 (via the stale 0.2 edge) with
+# bevy_math's glam::Vec3 from 0.32.1 -- the exact "two different glam
+# versions treated as incompatible types" symptom (294 cargo check errors).
+# Bumping to "0.3" unifies avian3d onto the SAME glam_matrix_extras version
+# bevy_heavy already uses, collapsing the duplicate glam resolution.
+glam_matrix_extras = { version = "0.3", features = ["bevy_reflect"] }
+bevy_heavy = { version = "0.5" }
+bevy_transform_interpolation = { version = "0.5" }
 libm = { version = "0.2", optional = true }
 approx = "0.5"
 parry3d = { version = "0.26", optional = true }
@@ -113,13 +127,13 @@ disqualified = { version = "1.0" }
 
 [dev-dependencies]
 examples_common_3d = { path = "../examples_common_3d" }
-bevy = { version = "0.18.0", features = [
+bevy = { version = "0.19.0", features = [
     "3d",
     "ui",
     "https",
     "experimental_bevy_feathers",
 ] }
-bevy_heavy = { version = "0.4", features = ["approx"] }
+bevy_heavy = { version = "0.5", features = ["approx"] }
 criterion = { version = "0.8", features = ["html_reports"] }
 bevy_mod_debugdump = { version = "0.15" }
 rand = "0.9"

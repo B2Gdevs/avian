@@ -8,7 +8,7 @@ use bevy::{
         entity::Entity,
         entity_disabling::Disabled,
         error::Result,
-        lifecycle::{HookContext, Insert, Replace},
+        lifecycle::{Discard, HookContext, Insert},
         observer::On,
         query::{Changed, Has, Or, With, Without},
         resource::Resource,
@@ -123,7 +123,7 @@ fn wake_on_remove_sleeping(mut world: DeferredWorld, ctx: HookContext) {
 }
 
 fn wake_on_replace_rigid_body(
-    trigger: On<Replace, RigidBody>,
+    trigger: On<Discard, RigidBody>,
     mut commands: Commands,
     query: Query<&BodyIslandNode>,
 ) {
@@ -293,18 +293,25 @@ struct CachedBodySleepingSystemState(
 /// A [`Command`] that forces a [`RigidBody`] and its [`PhysicsIsland`][super::PhysicsIsland] to be [`Sleeping`].
 pub struct SleepBody(pub Entity);
 
-impl Command<Result> for SleepBody {
+impl Command for SleepBody {
+    type Out = Result;
+
     fn apply(self, world: &mut World) -> Result {
         if let Ok(entity) = world.get_entity(self.0) {
             if let Some(island_id) = entity.get::<BodyIslandNode>().map(|node| node.island_id) {
                 world.try_resource_scope(|world, mut state: Mut<CachedBodySleepingSystemState>| {
-                    let (
+                    let Ok((
                         mut body_islands,
                         body_colliders,
                         mut islands,
                         mut contact_graph,
                         mut joint_graph,
-                    ) = state.0.get_mut(world);
+                    )) = state.0.get_mut(world)
+                    else {
+                        // System params are currently unavailable (e.g. resource removed
+                        // mid-scope); skip this sleep request for this tick.
+                        return;
+                    };
 
                     let Some(island) = islands.get_mut(island_id) else {
                         return;
@@ -361,10 +368,17 @@ struct CachedIslandSleepingSystemState(
 pub struct SleepIslands(pub Vec<IslandId>);
 
 impl Command for SleepIslands {
+    type Out = ();
+
     fn apply(self, world: &mut World) {
         world.try_resource_scope(|world, mut state: Mut<CachedIslandSleepingSystemState>| {
-            let (bodies, mut islands, mut contact_graph, mut constraint_graph) =
-                state.0.get_mut(world);
+            let Ok((bodies, mut islands, mut contact_graph, mut constraint_graph)) =
+                state.0.get_mut(world)
+            else {
+                // System params are currently unavailable; skip sleeping these islands
+                // for this tick rather than panicking.
+                return;
+            };
 
             let mut bodies_to_sleep = Vec::<(Entity, Sleeping)>::new();
 
@@ -448,7 +462,9 @@ struct CachedIslandWakingSystemState(
 /// A [`Command`] that wakes up a [`RigidBody`] and its [`PhysicsIsland`](super::PhysicsIsland) if it is [`Sleeping`].
 pub struct WakeBody(pub Entity);
 
-impl Command<Result> for WakeBody {
+impl Command for WakeBody {
+    type Out = Result;
+
     fn apply(self, world: &mut World) -> Result {
         if let Ok(entity) = world.get_entity(self.0) {
             if let Some(body_island) = entity.get::<BodyIslandNode>() {
@@ -471,10 +487,17 @@ impl Command<Result> for WakeBody {
 pub struct WakeIslands(pub Vec<IslandId>);
 
 impl Command for WakeIslands {
+    type Out = ();
+
     fn apply(self, world: &mut World) {
         world.try_resource_scope(|world, mut state: Mut<CachedIslandWakingSystemState>| {
-            let (mut bodies, mut islands, mut contact_graph, mut constraint_graph) =
-                state.0.get_mut(world);
+            let Ok((mut bodies, mut islands, mut contact_graph, mut constraint_graph)) =
+                state.0.get_mut(world)
+            else {
+                // System params are currently unavailable; skip waking these islands
+                // for this tick rather than panicking.
+                return;
+            };
 
             let mut bodies_to_wake = Vec::<Entity>::new();
 

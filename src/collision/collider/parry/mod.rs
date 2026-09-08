@@ -411,8 +411,10 @@ impl AnyCollider for Collider {
             .shape_scaled()
             .compute_aabb(&make_pose(position, rotation));
         ColliderAabb {
-            min: aabb.mins,
-            max: aabb.maxs,
+            // Same `parry`-native (`glamx`-backed) -> bevy-native boundary conversion as
+            // `ColliderAabb::from_shape` (`collision::collider::mod`).
+            min: parry_vector_to_bevy(aabb.mins),
+            max: parry_vector_to_bevy(aabb.maxs),
         }
     }
 
@@ -492,17 +494,17 @@ impl ComputeMassProperties for Collider {
 
     fn principal_angular_inertia(&self, mass: f32) -> Vec3 {
         let props = self.shape_scaled().mass_properties(mass as Scalar);
-        props.principal_inertia().f32()
+        parry_vector_to_bevy(props.principal_inertia()).f32()
     }
 
     fn local_inertial_frame(&self) -> Quat {
         let props = self.shape_scaled().mass_properties(1.0);
-        props.principal_inertia_local_frame.f32()
+        parry_quat_to_bevy(props.principal_inertia_local_frame).f32()
     }
 
     fn center_of_mass(&self) -> Vec3 {
         let props = self.shape_scaled().mass_properties(1.0);
-        props.local_com.f32()
+        parry_vector_to_bevy(props.local_com).f32()
     }
 
     fn mass_properties(&self, density: f32) -> MassProperties {
@@ -513,10 +515,10 @@ impl ComputeMassProperties for Collider {
             #[cfg(feature = "2d")]
             angular_inertia: props.principal_inertia() as f32,
             #[cfg(feature = "3d")]
-            principal_angular_inertia: props.principal_inertia().f32(),
+            principal_angular_inertia: parry_vector_to_bevy(props.principal_inertia()).f32(),
             #[cfg(feature = "3d")]
-            local_inertial_frame: props.principal_inertia_local_frame.f32(),
-            center_of_mass: props.local_com.f32(),
+            local_inertial_frame: parry_quat_to_bevy(props.principal_inertia_local_frame).f32(),
+            center_of_mass: parry_vector_to_bevy(props.local_com).f32(),
         }
     }
 }
@@ -603,10 +605,12 @@ impl Collider {
         point: Vector,
         solid: bool,
     ) -> (Vector, bool) {
-        let projection =
-            self.shape_scaled()
-                .project_point(&make_pose(translation, rotation), point, solid);
-        (projection.point, projection.is_inside)
+        let projection = self.shape_scaled().project_point(
+            &make_pose(translation, rotation),
+            bevy_vector_to_parry(point),
+            solid,
+        );
+        (parry_vector_to_bevy(projection.point), projection.is_inside)
     }
 
     /// Computes the minimum distance between the given `point` and `self` transformed by `translation` and `rotation`.
@@ -621,8 +625,11 @@ impl Collider {
         point: Vector,
         solid: bool,
     ) -> Scalar {
-        self.shape_scaled()
-            .distance_to_point(&make_pose(translation, rotation), point, solid)
+        self.shape_scaled().distance_to_point(
+            &make_pose(translation, rotation),
+            bevy_vector_to_parry(point),
+            solid,
+        )
     }
 
     /// Tests whether the given `point` is inside of `self` transformed by `translation` and `rotation`.
@@ -633,7 +640,7 @@ impl Collider {
         point: Vector,
     ) -> bool {
         self.shape_scaled()
-            .contains_point(&make_pose(translation, rotation), point)
+            .contains_point(&make_pose(translation, rotation), bevy_vector_to_parry(point))
     }
 
     /// Computes the distance and normal between the given ray and `self`
@@ -659,11 +666,14 @@ impl Collider {
     ) -> Option<(Scalar, Vector)> {
         let hit = self.shape_scaled().cast_ray_and_get_normal(
             &make_pose(translation, rotation),
-            &parry::query::Ray::new(ray_origin, ray_direction),
+            &parry::query::Ray::new(
+                bevy_vector_to_parry(ray_origin),
+                bevy_vector_to_parry(ray_direction),
+            ),
             max_distance,
             solid,
         );
-        hit.map(|hit| (hit.time_of_impact, hit.normal))
+        hit.map(|hit| (hit.time_of_impact, parry_vector_to_bevy(hit.normal)))
     }
 
     /// Tests whether the given ray intersects `self` transformed by `translation` and `rotation`.
@@ -683,7 +693,10 @@ impl Collider {
     ) -> bool {
         self.shape_scaled().intersects_ray(
             &make_pose(translation, rotation),
-            &parry::query::Ray::new(ray_origin, ray_direction),
+            &parry::query::Ray::new(
+                bevy_vector_to_parry(ray_origin),
+                bevy_vector_to_parry(ray_direction),
+            ),
             max_distance,
         )
     }
@@ -789,8 +802,8 @@ impl Collider {
     /// and its height along the `Y` axis, excluding the hemispheres.
     pub fn capsule(radius: Scalar, length: Scalar) -> Self {
         SharedShape::capsule(
-            Vector::Y * length * 0.5,
-            Vector::NEG_Y * length * 0.5,
+            bevy_vector_to_parry(Vector::Y * length * 0.5),
+            bevy_vector_to_parry(Vector::NEG_Y * length * 0.5),
             radius,
         )
         .into()
@@ -798,18 +811,18 @@ impl Collider {
 
     /// Creates a collider with a capsule shape defined by its radius and endpoints `a` and `b`.
     pub fn capsule_endpoints(radius: Scalar, a: Vector, b: Vector) -> Self {
-        SharedShape::capsule(a, b, radius).into()
+        SharedShape::capsule(bevy_vector_to_parry(a), bevy_vector_to_parry(b), radius).into()
     }
 
     /// Creates a collider with a [half-space](https://en.wikipedia.org/wiki/Half-space_(geometry)) shape
     /// defined by the outward normal of its planar boundary.
     pub fn half_space(outward_normal: Vector) -> Self {
-        SharedShape::halfspace(outward_normal.normalize_or_zero()).into()
+        SharedShape::halfspace(bevy_vector_to_parry(outward_normal.normalize_or_zero())).into()
     }
 
     /// Creates a collider with a segment shape defined by its endpoints `a` and `b`.
     pub fn segment(a: Vector, b: Vector) -> Self {
-        SharedShape::segment(a, b).into()
+        SharedShape::segment(bevy_vector_to_parry(a), bevy_vector_to_parry(b)).into()
     }
 
     /// Creates a collider with a triangle shape defined by its points `a`, `b`, and `c`.
@@ -845,7 +858,12 @@ impl Collider {
     /// Creates a collider with a triangle shape defined by its points `a`, `b`, and `c`.
     #[cfg(feature = "3d")]
     pub fn triangle(a: Vector, b: Vector, c: Vector) -> Self {
-        SharedShape::triangle(a, b, c).into()
+        SharedShape::triangle(
+            bevy_vector_to_parry(a),
+            bevy_vector_to_parry(b),
+            bevy_vector_to_parry(c),
+        )
+        .into()
     }
 
     /// Creates a collider with a regular polygon shape defined by the circumradius and the number of sides.
@@ -856,7 +874,7 @@ impl Collider {
 
     /// Creates a collider with a polyline shape defined by its vertices and optionally an index buffer.
     pub fn polyline(vertices: Vec<Vector>, indices: Option<Vec<[u32; 2]>>) -> Self {
-        SharedShape::polyline(vertices, indices).into()
+        SharedShape::polyline(bevy_vector_vec_to_parry(vertices), indices).into()
     }
 
     /// Creates a collider with a triangle mesh shape defined by its vertex and index buffers.
@@ -892,7 +910,7 @@ impl Collider {
         vertices: Vec<Vector>,
         indices: Vec<[u32; 3]>,
     ) -> Result<Self, TrimeshBuilderError> {
-        SharedShape::trimesh(vertices, indices).map(|trimesh| trimesh.into())
+        SharedShape::trimesh(bevy_vector_vec_to_parry(vertices), indices).map(|trimesh| trimesh.into())
     }
 
     /// Creates a collider with a triangle mesh shape defined by its vertex and index buffers
@@ -935,7 +953,7 @@ impl Collider {
         indices: Vec<[u32; 3]>,
         flags: TrimeshFlags,
     ) -> Result<Self, TrimeshBuilderError> {
-        SharedShape::trimesh_with_flags(vertices, indices, flags.into())
+        SharedShape::trimesh_with_flags(bevy_vector_vec_to_parry(vertices), indices, flags.into())
             .map(|trimesh| trimesh.into())
     }
 
@@ -943,14 +961,14 @@ impl Collider {
     /// defined by its vertex and index buffers.
     #[cfg(feature = "2d")]
     pub fn convex_decomposition(vertices: Vec<Vector>, indices: Vec<[u32; 2]>) -> Self {
-        SharedShape::convex_decomposition(&vertices, &indices).into()
+        SharedShape::convex_decomposition(&bevy_vector_slice_to_parry(&vertices), &indices).into()
     }
 
     /// Creates a collider shape with a compound shape obtained from the decomposition of a given trimesh
     /// defined by its vertex and index buffers.
     #[cfg(feature = "3d")]
     pub fn convex_decomposition(vertices: Vec<Vector>, indices: Vec<[u32; 3]>) -> Self {
-        SharedShape::convex_decomposition(&vertices, &indices).into()
+        SharedShape::convex_decomposition(&bevy_vector_slice_to_parry(&vertices), &indices).into()
     }
 
     /// Creates a collider shape with a compound shape obtained from the decomposition of a given polyline
@@ -962,8 +980,12 @@ impl Collider {
         indices: Vec<[u32; 2]>,
         params: &VhacdParameters,
     ) -> Self {
-        SharedShape::convex_decomposition_with_params(&vertices, &indices, &params.clone().into())
-            .into()
+        SharedShape::convex_decomposition_with_params(
+            &bevy_vector_slice_to_parry(&vertices),
+            &indices,
+            &params.clone().into(),
+        )
+        .into()
     }
 
     /// Creates a collider shape with a compound shape obtained from the decomposition of a given trimesh
@@ -975,22 +997,26 @@ impl Collider {
         indices: Vec<[u32; 3]>,
         params: VhacdParameters,
     ) -> Self {
-        SharedShape::convex_decomposition_with_params(&vertices, &indices, &params.clone().into())
-            .into()
+        SharedShape::convex_decomposition_with_params(
+            &bevy_vector_slice_to_parry(&vertices),
+            &indices,
+            &params.clone().into(),
+        )
+        .into()
     }
 
     /// Creates a collider with a [convex polygon](https://en.wikipedia.org/wiki/Convex_polygon) shape obtained after computing
     /// the [convex hull](https://en.wikipedia.org/wiki/Convex_hull) of the given points.
     #[cfg(feature = "2d")]
     pub fn convex_hull(points: Vec<Vector>) -> Option<Self> {
-        SharedShape::convex_hull(&points).map(Into::into)
+        SharedShape::convex_hull(&bevy_vector_slice_to_parry(&points)).map(Into::into)
     }
 
     /// Creates a collider with a [convex polyhedron](https://en.wikipedia.org/wiki/Convex_polytope) shape obtained after computing
     /// the [convex hull](https://en.wikipedia.org/wiki/Convex_hull) of the given points.
     #[cfg(feature = "3d")]
     pub fn convex_hull(points: Vec<Vector>) -> Option<Self> {
-        SharedShape::convex_hull(&points).map(Into::into)
+        SharedShape::convex_hull(&bevy_vector_slice_to_parry(&points)).map(Into::into)
     }
 
     /// Creates a collider with a [convex polygon](https://en.wikipedia.org/wiki/Convex_polygon) shape **without** computing
@@ -998,7 +1024,7 @@ impl Collider {
     /// assumed and not checked.
     #[cfg(feature = "2d")]
     pub fn convex_polyline(points: Vec<Vector>) -> Option<Self> {
-        SharedShape::convex_polyline(points).map(Into::into)
+        SharedShape::convex_polyline(bevy_vector_vec_to_parry(points)).map(Into::into)
     }
 
     /// Creates a collider shape made of voxels.
@@ -1015,6 +1041,17 @@ impl Collider {
             .iter()
             .map(|c| c.as_i64vec3())
             .collect::<Vec<_>>();
+        // `Voxels::new`/`SharedShape::voxels_from_points` (parry) expect `parry`-native
+        // (`glamx`-backed) vectors, never Avian's own bevy-native `Vector`/`IVector` --
+        // `f32` (this repo's only active precision, `apps/magicborn-kingdom/Cargo.toml`'s
+        // `avian3d` feature list) converts at the boundary; `f64` is out of scope (see
+        // `bevy_ivector_to_parry`'s own doc comment).
+        #[cfg(feature = "f32")]
+        let shape = Voxels::new(
+            bevy_vector_to_parry(voxel_size),
+            &bevy_ivector_slice_to_parry(grid_coordinates),
+        );
+        #[cfg(feature = "f64")]
         let shape = Voxels::new(voxel_size, grid_coordinates);
         SharedShape::new(shape).into()
     }
@@ -1023,7 +1060,11 @@ impl Collider {
     ///
     /// Each voxel has the size `voxel_size` and contains at least one point from `points`.
     pub fn voxels_from_points(voxel_size: Vector, points: &[Vector]) -> Self {
-        SharedShape::voxels_from_points(voxel_size, points).into()
+        SharedShape::voxels_from_points(
+            bevy_vector_to_parry(voxel_size),
+            &bevy_vector_slice_to_parry(points),
+        )
+        .into()
     }
 
     /// Creates a voxel collider obtained from the decomposition of the given polyline into voxelized convex parts.
@@ -1034,7 +1075,13 @@ impl Collider {
         voxel_size: Scalar,
         fill_mode: FillMode,
     ) -> Self {
-        SharedShape::voxelized_mesh(vertices, indices, voxel_size, fill_mode.into()).into()
+        SharedShape::voxelized_mesh(
+            &bevy_vector_slice_to_parry(vertices),
+            indices,
+            voxel_size,
+            fill_mode.into(),
+        )
+        .into()
     }
 
     /// Creates a voxel collider obtained from the decomposition of the given trimesh into voxelized convex parts.
@@ -1045,7 +1092,13 @@ impl Collider {
         voxel_size: Scalar,
         fill_mode: FillMode,
     ) -> Self {
-        SharedShape::voxelized_mesh(vertices, indices, voxel_size, fill_mode.into()).into()
+        SharedShape::voxelized_mesh(
+            &bevy_vector_slice_to_parry(vertices),
+            indices,
+            voxel_size,
+            fill_mode.into(),
+        )
+        .into()
     }
 
     /// Creates a voxel collider obtained from the decomposition of the given `Mesh` into voxelized convex parts.
@@ -1058,7 +1111,13 @@ impl Collider {
         fill_mode: FillMode,
     ) -> Option<Self> {
         extract_mesh_vertices_indices(mesh).map(|(vertices, indices)| {
-            SharedShape::voxelized_mesh(&vertices, &indices, voxel_size, fill_mode.into()).into()
+            SharedShape::voxelized_mesh(
+                &bevy_vector_slice_to_parry(&vertices),
+                &indices,
+                voxel_size,
+                fill_mode.into(),
+            )
+            .into()
         })
     }
 
@@ -1095,7 +1154,7 @@ impl Collider {
         parameters: &VhacdParameters,
     ) -> Vec<Self> {
         SharedShape::voxelized_convex_decomposition_with_params(
-            vertices,
+            &bevy_vector_slice_to_parry(vertices),
             indices,
             &parameters.clone().into(),
         )
@@ -1137,7 +1196,7 @@ impl Collider {
         );
 
         let heights = parry::utils::Array2::new(row_count, column_count, data);
-        SharedShape::heightfield(heights, scale).into()
+        SharedShape::heightfield(heights, bevy_vector_to_parry(scale)).into()
     }
 
     /// Creates a collider with a triangle mesh shape from a `Mesh`.
@@ -1174,7 +1233,7 @@ impl Collider {
     pub fn trimesh_from_mesh(mesh: &Mesh) -> Option<Self> {
         extract_mesh_vertices_indices(mesh).and_then(|(vertices, indices)| {
             SharedShape::trimesh_with_flags(
-                vertices,
+                bevy_vector_vec_to_parry(vertices),
                 indices,
                 TrimeshFlags::MERGE_DUPLICATE_VERTICES.into(),
             )
@@ -1217,7 +1276,7 @@ impl Collider {
     #[cfg(feature = "collider-from-mesh")]
     pub fn trimesh_from_mesh_with_config(mesh: &Mesh, flags: TrimeshFlags) -> Option<Self> {
         extract_mesh_vertices_indices(mesh).and_then(|(vertices, indices)| {
-            SharedShape::trimesh_with_flags(vertices, indices, flags.into())
+            SharedShape::trimesh_with_flags(bevy_vector_vec_to_parry(vertices), indices, flags.into())
                 .map(|trimesh| trimesh.into())
                 .ok()
         })
@@ -1241,8 +1300,9 @@ impl Collider {
     /// ```
     #[cfg(feature = "collider-from-mesh")]
     pub fn convex_hull_from_mesh(mesh: &Mesh) -> Option<Self> {
-        extract_mesh_vertices_indices(mesh)
-            .and_then(|(vertices, _)| SharedShape::convex_hull(&vertices).map(|shape| shape.into()))
+        extract_mesh_vertices_indices(mesh).and_then(|(vertices, _)| {
+            SharedShape::convex_hull(&bevy_vector_slice_to_parry(&vertices)).map(|shape| shape.into())
+        })
     }
 
     /// Creates a compound shape obtained from the decomposition of a `Mesh`.
@@ -1264,7 +1324,7 @@ impl Collider {
     #[cfg(feature = "collider-from-mesh")]
     pub fn convex_decomposition_from_mesh(mesh: &Mesh) -> Option<Self> {
         extract_mesh_vertices_indices(mesh).map(|(vertices, indices)| {
-            SharedShape::convex_decomposition(&vertices, &indices).into()
+            SharedShape::convex_decomposition(&bevy_vector_slice_to_parry(&vertices), &indices).into()
         })
     }
 
@@ -1296,7 +1356,7 @@ impl Collider {
     ) -> Option<Self> {
         extract_mesh_vertices_indices(mesh).map(|(vertices, indices)| {
             SharedShape::convex_decomposition_with_params(
-                &vertices,
+                &bevy_vector_slice_to_parry(&vertices),
                 &indices,
                 &parameters.clone().into(),
             )
@@ -1531,13 +1591,17 @@ fn scale_shape(
     num_subdivisions: u32,
 ) -> Result<SharedShape, UnsupportedShape> {
     let scale = scale.abs();
+    // `.scaled(...)` below are `parry`-native `Shape` trait methods that take a
+    // `parry`-native vector, distinct from Avian's own bevy_math-backed `scale`
+    // (see `math::parry_compat`) -- convert once here for every match arm below.
+    let parry_scale = bevy_vector_to_parry(scale);
     match shape.as_typed_shape() {
-        TypedShape::Cuboid(s) => Ok(SharedShape::new(s.scaled(scale.abs()))),
+        TypedShape::Cuboid(s) => Ok(SharedShape::new(s.scaled(parry_scale))),
         TypedShape::RoundCuboid(s) => Ok(SharedShape::new(RoundShape {
             border_radius: s.border_radius,
-            inner_shape: s.inner_shape.scaled(scale.abs()),
+            inner_shape: s.inner_shape.scaled(parry_scale),
         })),
-        TypedShape::Capsule(c) => match c.scaled(scale.abs(), num_subdivisions) {
+        TypedShape::Capsule(c) => match c.scaled(parry_scale, num_subdivisions) {
             None => {
                 log::error!("Failed to apply scale {} to Capsule shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1558,7 +1622,7 @@ fn scale_shape(
                 }
             }
             #[cfg(feature = "3d")]
-            match b.scaled(scale.abs(), num_subdivisions) {
+            match b.scaled(parry_scale, num_subdivisions) {
                 None => {
                     log::error!("Failed to apply scale {} to Ball shape.", scale);
                     Ok(SharedShape::ball(0.0))
@@ -1567,25 +1631,25 @@ fn scale_shape(
                 Some(Either::Right(b)) => Ok(SharedShape::new(b)),
             }
         }
-        TypedShape::Segment(s) => Ok(SharedShape::new(s.scaled(scale))),
-        TypedShape::Triangle(t) => Ok(SharedShape::new(t.scaled(scale))),
+        TypedShape::Segment(s) => Ok(SharedShape::new(s.scaled(parry_scale))),
+        TypedShape::Triangle(t) => Ok(SharedShape::new(t.scaled(parry_scale))),
         TypedShape::RoundTriangle(t) => Ok(SharedShape::new(RoundShape {
             border_radius: t.border_radius,
-            inner_shape: t.inner_shape.scaled(scale),
+            inner_shape: t.inner_shape.scaled(parry_scale),
         })),
-        TypedShape::TriMesh(t) => Ok(SharedShape::new(t.clone().scaled(scale))),
-        TypedShape::Polyline(p) => Ok(SharedShape::new(p.clone().scaled(scale))),
-        TypedShape::HalfSpace(h) => match h.scaled(scale) {
+        TypedShape::TriMesh(t) => Ok(SharedShape::new(t.clone().scaled(parry_scale))),
+        TypedShape::Polyline(p) => Ok(SharedShape::new(p.clone().scaled(parry_scale))),
+        TypedShape::HalfSpace(h) => match h.scaled(parry_scale) {
             None => {
                 log::error!("Failed to apply scale {} to HalfSpace shape.", scale);
                 Ok(SharedShape::ball(0.0))
             }
             Some(scaled) => Ok(SharedShape::new(scaled)),
         },
-        TypedShape::Voxels(v) => Ok(SharedShape::new(v.clone().scaled(scale))),
-        TypedShape::HeightField(h) => Ok(SharedShape::new(h.clone().scaled(scale))),
+        TypedShape::Voxels(v) => Ok(SharedShape::new(v.clone().scaled(parry_scale))),
+        TypedShape::HeightField(h) => Ok(SharedShape::new(h.clone().scaled(parry_scale))),
         #[cfg(feature = "2d")]
-        TypedShape::ConvexPolygon(cp) => match cp.clone().scaled(scale) {
+        TypedShape::ConvexPolygon(cp) => match cp.clone().scaled(parry_scale) {
             None => {
                 log::error!("Failed to apply scale {} to ConvexPolygon shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1593,7 +1657,7 @@ fn scale_shape(
             Some(scaled) => Ok(SharedShape::new(scaled)),
         },
         #[cfg(feature = "2d")]
-        TypedShape::RoundConvexPolygon(cp) => match cp.inner_shape.clone().scaled(scale) {
+        TypedShape::RoundConvexPolygon(cp) => match cp.inner_shape.clone().scaled(parry_scale) {
             None => {
                 log::error!(
                     "Failed to apply scale {} to RoundConvexPolygon shape.",
@@ -1607,7 +1671,7 @@ fn scale_shape(
             })),
         },
         #[cfg(feature = "3d")]
-        TypedShape::ConvexPolyhedron(cp) => match cp.clone().scaled(scale) {
+        TypedShape::ConvexPolyhedron(cp) => match cp.clone().scaled(parry_scale) {
             None => {
                 log::error!("Failed to apply scale {} to ConvexPolyhedron shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1615,7 +1679,7 @@ fn scale_shape(
             Some(scaled) => Ok(SharedShape::new(scaled)),
         },
         #[cfg(feature = "3d")]
-        TypedShape::RoundConvexPolyhedron(cp) => match cp.clone().inner_shape.scaled(scale) {
+        TypedShape::RoundConvexPolyhedron(cp) => match cp.clone().inner_shape.scaled(parry_scale) {
             None => {
                 log::error!(
                     "Failed to apply scale {} to RoundConvexPolyhedron shape.",
@@ -1629,7 +1693,7 @@ fn scale_shape(
             })),
         },
         #[cfg(feature = "3d")]
-        TypedShape::Cylinder(c) => match c.scaled(scale.abs(), num_subdivisions) {
+        TypedShape::Cylinder(c) => match c.scaled(parry_scale, num_subdivisions) {
             None => {
                 log::error!("Failed to apply scale {} to Cylinder shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1638,7 +1702,7 @@ fn scale_shape(
             Some(Either::Right(b)) => Ok(SharedShape::new(b)),
         },
         #[cfg(feature = "3d")]
-        TypedShape::RoundCylinder(c) => match c.inner_shape.scaled(scale.abs(), num_subdivisions) {
+        TypedShape::RoundCylinder(c) => match c.inner_shape.scaled(parry_scale, num_subdivisions) {
             None => {
                 log::error!("Failed to apply scale {} to RoundCylinder shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1653,7 +1717,7 @@ fn scale_shape(
             })),
         },
         #[cfg(feature = "3d")]
-        TypedShape::Cone(c) => match c.scaled(scale, num_subdivisions) {
+        TypedShape::Cone(c) => match c.scaled(parry_scale, num_subdivisions) {
             None => {
                 log::error!("Failed to apply scale {} to Cone shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1662,7 +1726,7 @@ fn scale_shape(
             Some(Either::Right(b)) => Ok(SharedShape::new(b)),
         },
         #[cfg(feature = "3d")]
-        TypedShape::RoundCone(c) => match c.inner_shape.scaled(scale, num_subdivisions) {
+        TypedShape::RoundCone(c) => match c.inner_shape.scaled(parry_scale, num_subdivisions) {
             None => {
                 log::error!("Failed to apply scale {} to RoundCone shape.", scale);
                 Ok(SharedShape::ball(0.0))
@@ -1683,14 +1747,22 @@ fn scale_shape(
                 #[cfg(feature = "2d")]
                 scaled.push((
                     make_pose(
-                        pose.translation * scale,
+                        parry_vector_to_bevy(pose.translation) * scale,
                         Rotation::radians(pose.rotation.angle()),
                     ),
                     scale_shape(shape, scale, num_subdivisions)?,
                 ));
                 #[cfg(feature = "3d")]
                 scaled.push((
-                    make_pose(pose.translation * scale, pose.rotation),
+                    // `pose` here is a `parry`-native `Pose3` (translation: parry Vec3,
+                    // rotation: parry Quat/Rot3, both glam-0.30-backed via glamx) -- convert
+                    // the whole rotation at this boundary via `parry_quat_to_bevy`, rather
+                    // than letting the parry-native `Quat` flow into `make_pose`'s
+                    // `impl Into<Rotation>` (bevy-native) parameter.
+                    make_pose(
+                        parry_vector_to_bevy(pose.translation) * scale,
+                        parry_quat_to_bevy(pose.rotation),
+                    ),
                     scale_shape(shape, scale, num_subdivisions)?,
                 ));
             }

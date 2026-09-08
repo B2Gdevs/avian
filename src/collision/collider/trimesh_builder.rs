@@ -259,10 +259,17 @@ impl TrimeshBuilder {
                     Trimesh::default(),
                     move |mut compound_trimesh, (sub_pos, shape)| {
                         sub_builder.shape = shape.clone();
-                        sub_builder.position =
-                            Position(self.position.0 + self.rotation * sub_pos.translation);
-                        sub_builder.rotation =
-                            self.rotation.mul_quat(sub_pos.rotation).normalize().into();
+                        // `sub_pos` is a `parry`-native `Pose3` (compound sub-shape pose) --
+                        // convert its translation/rotation at this boundary before mixing
+                        // with the bevy-native `self.position`/`self.rotation`.
+                        sub_builder.position = Position(
+                            self.position.0 + self.rotation * parry_vector_to_bevy(sub_pos.translation),
+                        );
+                        sub_builder.rotation = self
+                            .rotation
+                            .mul_quat(parry_quat_to_bevy(sub_pos.rotation))
+                            .normalize()
+                            .into();
                         let trimesh = match sub_builder.build() {
                             Ok(trimesh) => trimesh,
                             Err(error) => {
@@ -320,9 +327,11 @@ impl TrimeshBuilder {
         };
         let pos = self.position;
         Ok(Trimesh {
+            // `vertices` are `parry`-native points/vectors (from `to_trimesh()`/`.vertices()`
+            // on the underlying parry shape) -- convert each one at this boundary.
             vertices: vertices
                 .into_iter()
-                .map(|v| pos.0 + self.rotation * v)
+                .map(|v| pos.0 + self.rotation * parry_vector_to_bevy(v))
                 .collect(),
             indices,
         })

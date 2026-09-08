@@ -315,7 +315,11 @@ fn trigger_collision_events(
     mut started: Local<Vec<CollisionStart>>,
     mut ended: Local<Vec<CollisionEnd>>,
 ) {
-    let mut state = state.get_mut(world);
+    let Ok(mut state) = state.get_mut(world) else {
+        // System params are currently unavailable; skip emitting events for this tick
+        // rather than panicking.
+        return;
+    };
 
     // Collect `CollisionStart` events.
     for event in state.started.read() {

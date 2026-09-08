@@ -81,6 +81,7 @@ pub use total::{PhysicsTotalDiagnostics, PhysicsTotalDiagnosticsPlugin};
 use crate::{PhysicsStepSystems, schedule::PhysicsSchedule};
 use bevy::{
     diagnostic::DiagnosticPath,
+    ecs::component::Mutable,
     prelude::{App, IntoScheduleConfigs, ResMut, Resource, SystemSet},
 };
 #[cfg(feature = "bevy_diagnostic")]
@@ -127,7 +128,16 @@ pub enum PhysicsDiagnosticsSystems {
 }
 
 /// A trait for resources storing timers and counters for [physics diagnostics](crate::diagnostics).
-pub trait PhysicsDiagnostics: Default + Resource {
+///
+/// Bound to `Resource<Mutability = Mutable>` (real, live compile error this fixes,
+/// `bevy_ecs`'s own `ResMut<'_, Self>` in [`Self::reset`] below otherwise cannot be
+/// dereferenced for assignment: `DerefMut`/`DetectChangesMut` for `ResMut<'w, T>` are only
+/// implemented under `T: Resource<Mutability = Mutable>` -- see
+/// `change_detection_mut_impl!(ResMut<'w, T>, T, Resource<Mutability = Mutable>)` in
+/// `bevy_ecs`'s `change_detection/traits.rs` -- and `Resource: Component` alone does not
+/// guarantee `Self::Mutability == Mutable` (immutable components/resources are real and
+/// supported), so a generic `Self` needs the bound spelled out explicitly, not just inherited).
+pub trait PhysicsDiagnostics: Default + Resource<Mutability = Mutable> {
     /// Maps diagnostic paths to their respective duration fields.
     fn timer_paths(&self) -> Vec<(&'static DiagnosticPath, Duration)> {
         Vec::new()

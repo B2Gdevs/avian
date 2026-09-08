@@ -476,8 +476,11 @@ impl ColliderAabb {
     pub fn from_shape(shape: &crate::parry::shape::SharedShape) -> Self {
         let aabb = shape.compute_local_aabb();
         Self {
-            min: aabb.mins,
-            max: aabb.maxs,
+            // `aabb.mins`/`.maxs` are `parry`-native (`glamx`-backed) vectors -- convert at
+            // the boundary into Avian's own bevy-native `Vector`, same shape as every other
+            // `parry`-crossing value (see `math::parry_compat`).
+            min: parry_vector_to_bevy(aabb.mins),
+            max: parry_vector_to_bevy(aabb.maxs),
         }
     }
 

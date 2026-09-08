@@ -5,7 +5,7 @@
 
 use crate::prelude::*;
 use bevy::{
-    ecs::schedule::{ExecutorKind, LogLevel, ScheduleBuildSettings, ScheduleLabel},
+    ecs::schedule::{LogLevel, ScheduleBuildSettings, ScheduleLabel, SingleThreadedExecutor},
     prelude::*,
 };
 use dynamics::integrator::IntegrationSystems;
@@ -51,7 +51,9 @@ impl Plugin for SolverSchedulePlugin {
         // Set up the substep schedule, the schedule that runs systems in the inner substepping loop.
         app.edit_schedule(SubstepSchedule, |schedule| {
             schedule
-                .set_executor_kind(ExecutorKind::SingleThreaded)
+                // See the identical `set_executor_kind` -> `set_executor` note in
+                // `vendor/avian/src/schedule/mod.rs`.
+                .set_executor(SingleThreadedExecutor::new())
                 .set_build_settings(ScheduleBuildSettings {
                     ambiguity_detection: LogLevel::Error,
                     ..default()
